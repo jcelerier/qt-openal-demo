@@ -3,6 +3,7 @@
 #include <oalplus/alut.hpp>
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -92,6 +93,7 @@ class Scene
                 auto& source = sound.source();
                 // let the source play the sound
                 source.Play();
+                /*
 
                 // the path of the source
                 oalplus::CubicBezierLoop<oalplus::Vec3f, double> path(
@@ -103,6 +105,7 @@ class Scene
                                 oalplus::Vec3f(-9.0f,-1.0f, -7.0f)
                             });
                 //
+
                 // play the sound for a while
                 typedef std::chrono::system_clock clock;
                 typedef std::chrono::time_point<clock> time_point;
@@ -119,6 +122,9 @@ class Scene
                     std::chrono::milliseconds duration(10);
                     std::this_thread::sleep_for(duration);
                 }
+                */
+                while(true)
+                    std::this_thread::sleep_for(std::chrono::seconds(10));
             }
         }
 
@@ -180,6 +186,7 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
 
     auto modify_i = [=] (int i) {
         return [=] (const OSSIA::Value* val) {
+            std::cerr << "Got a message!" << std::endl;
             auto float_val = dynamic_cast<const OSSIA::Float*>(val);
             if(!float_val)
                 return;
@@ -214,19 +221,21 @@ int main(int argc, char** argv)
     Scene s;
 
     OSSIA::Local localDeviceParameters{};
-    auto localDevice = OSSIA::Device::create(localDeviceParameters, "3DAudioScene");
+    auto local = OSSIA::Device::create(localDeviceParameters, "3DAudioScene");
+
+    auto dev = OSSIA::Device::create(OSSIA::OSC{"127.0.0.1", 9997, 9996}, "MinuitDevice");
     {
         // Listener : position, orientation, volume ?
 
         // Sources : position, orientation, volume, enabled, sound file ?
 
         //// Global settings ////
-        auto settings_node = *localDevice->emplace(localDevice->children().cend(), "settings");
-        auto vol_node = settings_node->emplace(settings_node->children().cend(), "volume");
-        auto files_node = settings_node->emplace(settings_node->children().cend(), "files");
+        auto settings_node = *dev->emplace(dev->children().cend(), "settings");
+        auto vol_node = *settings_node->emplace(settings_node->children().cend(), "volume");
+        auto files_node = *settings_node->emplace(settings_node->children().cend(), "files");
 
-        auto vol_addr = (*vol_node)->createAddress(OSSIA::Value::Type::FLOAT);
-        auto files_addr = (*files_node)->createAddress(OSSIA::Value::Type::TUPLE);
+        auto vol_addr = vol_node->createAddress(OSSIA::Value::Type::FLOAT);
+        auto files_addr = files_node->createAddress(OSSIA::Value::Type::TUPLE);
 
         vol_addr->setValueCallback([] (const OSSIA::Value* val) { });
         files_addr->setValueCallback([] (const OSSIA::Value* val) { });
@@ -236,7 +245,7 @@ int main(int argc, char** argv)
         //localTestAddress->sendValue(&b);
 
         //// Listener settings ////
-        auto listener_node = *localDevice->emplace(localDevice->children().cend(), "listener");
+        auto listener_node = *dev->emplace(dev->children().cend(), "listener");
 
         auto listener_pos_node = *listener_node->emplace(listener_node->children().cend(), "pos");
 
