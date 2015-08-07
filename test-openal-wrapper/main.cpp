@@ -1,6 +1,5 @@
-#include <oalplus/al.hpp>
-#include <oalplus/all.hpp>
-#include <oalplus/alut.hpp>
+#include "SoundObj.hpp"
+
 #include <chrono>
 #include <thread>
 #include <iostream>
@@ -9,78 +8,20 @@
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/mem_fun.hpp>
-class Sound
-{
-    public:
-        Sound(const std::string& name):
-            Sound{name, oalplus::ALUtilityToolkit(false).CreateBufferHelloWorld()}
-        {
-        }
-
-        Sound(const std::string& name, const std::string& filename):
-            Sound{name, oalplus::ALUtilityToolkit(false).CreateBufferFromFile(filename)}
-        {
-        }
-
-        Sound(const std::string& name, const oalplus::Buffer& buf):
-            m_name{name},
-            m_source{oalplus::ObjectDesc(std::string(name))}
-        {
-            m_source.Buffer(buf);
-            m_source.Looping(true);
-            m_source.ReferenceDistance(15);
-        }
-
-        auto& source()
-        {
-            return m_source;
-        }
-
-        const auto& source() const
-        {
-            return m_source;
-        }
-
-        void setEnabled(bool b)
-        {
-            m_source.Gain(b ? m_gain : 0.);
-        }
-
-        const std::string& name() const
-        {
-            return m_name;
-        }
-
-        void setName(const std::string &name)
-        {
-            m_name = name;
-        }
-
-        void load(const std::string& file)
-        {
-            m_source.Buffer(oalplus::ALUtilityToolkit(false).CreateBufferFromFile(file));
-        }
-
-    private:
-        std::string m_name;
-        oalplus::Source m_source;
-        double m_gain{1.};
-};
-
 namespace bmi = boost::multi_index;
 using SoundMap = bmi::multi_index_container<
-Sound,
+SoundObj*,
 bmi::indexed_by<
 bmi::hashed_unique<
 bmi::const_mem_fun<
-Sound,
+SoundObj,
 const std::string&,
-&Sound::name
+&SoundObj::name
 >
 >
 >
 >;
-class Scene
+class Scene : public QObject
 {
     public:
         Scene()
@@ -90,47 +31,24 @@ class Scene
             m_listener.Velocity(0.0f, 0.0f, 0.0f);
             m_listener.Orientation(0.0f, 0.0f,-1.0f, 0.0f, 1.0f, 0.0f);
 
-            m_sounds.insert(Sound("ASound"));
+            auto s1 = new SoundObj{"ASound"};
+            s1->setParent(this);
+            s1->sound.load("snd1.wav");
+            s1->sound.source().Position(oalplus::Vec3f( -10.0f, 10.0f, -10.0f));
+            m_sounds.insert(s1);
+/*
+            auto s2 = new SoundObj{"BSound"};
+            s2->setParent(this);
+            s2->sound.load("snd2.wav");
+            s2->sound.source().Position(oalplus::Vec3f( 10.0f, -10.0f, 10.0f));
+            m_sounds.insert(s2);*/
         }
 
         void start()
         {
             for(auto& cst_sound : m_sounds)
             {
-                const_cast<Sound&>(cst_sound).source().Play();
-
-                /*
-
-                // the path of the source
-                oalplus::CubicBezierLoop<oalplus::Vec3f, double> path(
-                {
-                                oalplus::Vec3f( 0.0f, 0.0f, -9.0f),
-                                oalplus::Vec3f( 9.0f, 2.0f, -8.0f),
-                                oalplus::Vec3f( 4.0f,-3.0f, 9.0f),
-                                oalplus::Vec3f(-3.0f, 4.0f, 9.0f),
-                                oalplus::Vec3f(-9.0f,-1.0f, -7.0f)
-                            });
-                //
-
-                // play the sound for a while
-                typedef std::chrono::system_clock clock;
-                typedef std::chrono::time_point<clock> time_point;
-                time_point start = clock::now();
-                while(true)
-                {
-                    double t = double((clock::now() - start).count())*
-                            double(clock::period::num)/
-                            double(clock::period::den);
-                    if(t > 10.0) break;
-                    source.Position(path.Position(t/5.0));
-                    m_listener.Position(m_listener.Position() - oalplus::Vec3f{0.2, 0, 0});
-                    // wait for a while
-                    std::chrono::milliseconds duration(10);
-                    std::this_thread::sleep_for(duration);
-                }
-                */
-                while(true)
-                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                cst_sound->sound.source().Play();
             }
         }
 
@@ -214,8 +132,11 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
 }
 
 
+#include <QApplication>
 int main(int argc, char** argv)
 {
+    QApplication app(argc, argv);
+
     oalplus::Device device;
     oalplus::ContextMadeCurrent context(
                 device,
@@ -302,8 +223,9 @@ int main(int argc, char** argv)
                     return;
 
                 // Create the sound
-                s.sounds().insert(Sound{str_val->value});
-                auto& sound = const_cast<Sound&>(*s.sounds().get<0>().find(str_val->value));
+                auto sound_obj = new SoundObj{str_val->value};
+                s.sounds().insert(sound_obj);
+                auto& sound = sound_obj->sound;
 
                 // Create the callbacks and OSC device commands
                 auto src_node = *sources_list_node->emplace(sources_list_node->children().cend(), str_val->value);
@@ -318,20 +240,22 @@ int main(int argc, char** argv)
 
                 // Enablement
                 add_child(src_node, "enabled", OSSIA::Value::Type::BOOL,
-                          [&] (const OSSIA::Value* val) {
+                          [&,sound_obj] (const OSSIA::Value* val) {
                     auto enablement_val = dynamic_cast<const OSSIA::Bool*>(val);
                     if(!enablement_val)
                         return;
-                    sound.setEnabled(enablement_val->value);
+                    sound_obj->enablementChanged(enablement_val->value);
                 });
 
                 // Audio file
                 add_child(src_node, "file", OSSIA::Value::Type::STRING,
-                          [&] (const OSSIA::Value* val) {
+                          [&,sound_obj] (const OSSIA::Value* val) {
                     auto filename_val = dynamic_cast<const OSSIA::String*>(val);
                     if(!filename_val)
                         return;
-                    sound.load(filename_val->value);
+
+                    std::cerr << "Adding: " << filename_val->value.c_str() << std::endl;
+                    sound_obj->fileChanged(QString::fromStdString(filename_val->value));
                 });
             });
 
@@ -341,7 +265,7 @@ int main(int argc, char** argv)
                     return;
 
                 // Remove from the sounds
-                s.sounds().erase(str_val->value);
+                // TODO s.sounds().erase(str_val->value);
 
                 // Remove from the OSC device
                 auto& children = sources_node->children();
@@ -355,5 +279,5 @@ int main(int argc, char** argv)
     }
     s.start();
 
-    return 0;
+    return app.exec();
 }
