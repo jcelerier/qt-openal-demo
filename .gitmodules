@@ -1,0 +1,3 @@
+[submodule "test-openal-wrapper/API"]
+	path = test-openal-wrapper/API
+	url = https://github.com/OSSIA/API
