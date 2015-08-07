@@ -42,9 +42,30 @@ import QtAudioEngine 1.0
 import QtQuick 2.0
 
 AudioEngine {
-    SoundSourceList {
-
-    }
+    property list<TestSound> sounds : [
+        TestSound {
+            attenuationModel {
+                name:"attenuation_model"
+                start: 20
+                end: 180
+            }
+            sample {
+                name:"the_sample"
+                source: "whistle.wav"
+            }
+            sound {
+                name:"the_sound"
+                attenuationModel :"attenuation_model"
+                category:"sound_sources"
+                PlayVariation {
+                     looping:true
+                     sample:"engine"
+                     maxGain:1.
+                     minGain:0.
+                }
+             }
+        }
+    ]
 
     AudioCategory {
         name: "sound_sources"

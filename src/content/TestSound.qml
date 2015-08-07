@@ -6,6 +6,5 @@ QtObject {
     property AttenuationModelLinear attenuationModel
 
     property AudioSample sample
-
     property Sound sound
 }
