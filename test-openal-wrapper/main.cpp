@@ -36,12 +36,6 @@ class Scene : public QObject
             s1->sound.load("snd1.wav");
             s1->sound.source().Position(oalplus::Vec3f( -10.0f, 10.0f, -10.0f));
             m_sounds.insert(s1);
-/*
-            auto s2 = new SoundObj{"BSound"};
-            s2->setParent(this);
-            s2->sound.load("snd2.wav");
-            s2->sound.source().Position(oalplus::Vec3f( 10.0f, -10.0f, 10.0f));
-            m_sounds.insert(s2);*/
         }
 
         void start()
@@ -265,7 +259,7 @@ int main(int argc, char** argv)
                     return;
 
                 // Remove from the sounds
-                // TODO s.sounds().erase(str_val->value);
+                s.sounds().erase(str_val->value);
 
                 // Remove from the OSC device
                 auto& children = sources_node->children();
