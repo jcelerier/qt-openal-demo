@@ -39,7 +39,6 @@ class Sound
 
         void load(const std::string& file)
         {
-            qDebug() << "hohoho";
             m_source.Buffer(oalplus::ALUtilityToolkit(false).CreateBufferFromFile(file));
             m_source.Play();
         }

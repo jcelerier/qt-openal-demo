@@ -31,11 +31,7 @@ class Scene : public QObject
             m_listener.Velocity(0.0f, 0.0f, 0.0f);
             m_listener.Orientation(0.0f, 0.0f,-1.0f, 0.0f, 1.0f, 0.0f);
 
-            auto s1 = new SoundObj{"ASound"};
-            s1->setParent(this);
-            s1->sound.load("snd1.wav");
-            s1->sound.source().Position(oalplus::Vec3f( -10.0f, 10.0f, -10.0f));
-            m_sounds.insert(s1);
+
         }
 
         void start()
@@ -60,8 +56,7 @@ class Scene : public QObject
 #include <Network/Device.h>
 #include <Network/Protocol.h>
 #include <Network/Node.h>
-
-
+#include <Editor/Domain.h>
 
 template<typename Get, typename Set>
 struct Parameter
@@ -86,6 +81,19 @@ auto add_child(std::shared_ptr<OSSIA::Node>& node,
     auto new_node = *node->emplace(node->children().cend(), name);
     new_node->createAddress(type)->setValueCallback(callback);
 
+    return new_node;
+}
+
+template<typename Fun>
+auto add_float_child(std::shared_ptr<OSSIA::Node>& node,
+               const std::string& name,
+               Fun&& callback)
+{
+    auto new_node = *node->emplace(node->children().cend(), name);
+    auto addr = new_node->createAddress(OSSIA::Value::Type::FLOAT);
+
+    addr->setValueCallback(callback);
+    addr->setDomain(OSSIA::Domain::create(new OSSIA::Float(-100.), new OSSIA::Float(100.)));
     return new_node;
 }
 
@@ -120,36 +128,35 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
         param.set(oalplus::Vec3f{x->value, y->value, z->value});
     });
 
-    add_child(node, "x", OSSIA::Value::Type::FLOAT, modify_i(0));
-    add_child(node, "y", OSSIA::Value::Type::FLOAT, modify_i(1));
-    add_child(node, "z", OSSIA::Value::Type::FLOAT, modify_i(2));
+    add_float_child(node, "x", modify_i(0));
+    add_float_child(node, "y", modify_i(1));
+    add_float_child(node, "z", modify_i(2));
 }
 
-
-#include <QApplication>
-int main(int argc, char** argv)
+std::shared_ptr<OSSIA::Node> getNode(std::shared_ptr<OSSIA::Node> parent, 
+								     const std::string& name)
 {
-    QApplication app(argc, argv);
+	auto it = boost::range::find_if(
+				parent->children(),
+				[&] (const auto& node) { return node->getName() == name; });
+	Q_ASSERT(it != parent->children().end());
+	return *it;
+}
 
-    oalplus::Device device;
-    oalplus::ContextMadeCurrent context(
-                device,
-                oalplus::ContextAttribs().Add(oalplus::ContextAttrib::MonoSources, 1).Get());
+#include <thread>
+#include <chrono>
+class RemoteSceneManager
+{
+        Scene m_scene;
+        std::shared_ptr<OSSIA::Device> m_dev;
+        std::shared_ptr<OSSIA::Node> m_sourcesNode;
+        std::shared_ptr<OSSIA::Node> m_sourcesListNode;
 
-    Scene s;
-
-    OSSIA::Local localDeviceParameters{};
-    auto local = OSSIA::Device::create(localDeviceParameters, "3DAudioScene");
-
-    auto dev = OSSIA::Device::create(OSSIA::OSC{"127.0.0.1", 9997, 9996}, "MinuitDevice");
-    {
-        // Listener : position, orientation, volume ?
-
-        // Sources : position, orientation, volume, enabled, sound file ?
-
+    private:
         //// Global settings ////
+        void setupGlobal()
         {
-            auto settings_node = *dev->emplace(dev->children().cend(), "settings");
+            auto settings_node = *m_dev->emplace(m_dev->children().cend(), "settings");
             auto vol_node = *settings_node->emplace(settings_node->children().cend(), "volume");
             auto files_node = *settings_node->emplace(settings_node->children().cend(), "files");
 
@@ -159,17 +166,18 @@ int main(int argc, char** argv)
             vol_addr->setValueCallback([] (const OSSIA::Value* val) { });
             files_addr->setValueCallback([] (const OSSIA::Value* val) { });
         }
+
         //// Listener settings ////
+        void setupListener()
         {
-            auto listener_node = *dev->emplace(dev->children().cend(), "listener");
+            auto listener_node = *m_dev->emplace(m_dev->children().cend(), "listener");
 
             auto listener_pos_node = *listener_node->emplace(listener_node->children().cend(), "pos");
 
             add_position(listener_pos_node,
                          make_parameter(
-                             [&] () { return s.listener().Position(); },
-            [&] (const auto& elt) { s.listener().Position(elt); }
-            ));
+                             [&] () { return m_scene.listener().Position(); },
+                             [&] (const auto& elt) { m_scene.listener().Position(elt); }));
 
             auto listener_orient_node = *listener_node->emplace(listener_node->children().cend(), "orientation");
             auto listener_orient_addr = listener_orient_node->createAddress(OSSIA::Value::Type::TUPLE); // [ at_x at_y at_z up_x at_y at_z ]
@@ -187,90 +195,148 @@ int main(int argc, char** argv)
                 if(!at_x || !at_y || !at_z || !up_x || !up_y || !up_z)
                     return;
 
-                s.listener().Orientation(at_x->value, at_y->value, at_z->value, up_x->value, up_y->value, up_z->value);
+                m_scene.listener().Orientation(at_x->value, at_y->value, at_z->value, up_x->value, up_y->value, up_z->value);
             });
 
             auto listener_orient_at_node = *listener_orient_node->emplace(listener_orient_node->children().cend(), "at");
             add_position(listener_orient_at_node,
                          make_parameter(
-                             [&] () { return s.listener().OrientationAt(); },
-            [&] (const auto& elt) { s.listener().Orientation(elt, s.listener().OrientationUp()); }
+                             [&] () { return m_scene.listener().OrientationAt(); },
+                             [&] (const auto& elt) { m_scene.listener().Orientation(elt, m_scene.listener().OrientationUp()); }
             ));
             auto listener_orient_up_node = *listener_orient_node->emplace(listener_orient_node->children().cend(), "up");
             add_position(listener_orient_up_node,
                          make_parameter(
-                             [&] () { return s.listener().OrientationUp(); },
-            [&] (const auto& elt) { s.listener().Orientation(s.listener().OrientationAt(), elt); }
+                             [&] () { return m_scene.listener().OrientationUp(); },
+                             [&] (const auto& elt) { m_scene.listener().Orientation(m_scene.listener().OrientationAt(), elt); }
             ));
-
         }
 
         //// Sources settings ////
+        void setupSources()
         {
-            auto sources_node = *dev->emplace(dev->children().cend(), "sources");
-            auto sources_list_node = *sources_node->emplace(sources_node->children().cend(), "sources");
+            m_sourcesNode = *m_dev->emplace(m_dev->children().cend(), "sources");
+            m_sourcesListNode = *m_sourcesNode->emplace(m_sourcesNode->children().cend(), "sources");
 
-            add_child(sources_node, "add", OSSIA::Value::Type::STRING,
-                      [&] (const OSSIA::Value* val) {
-                auto str_val = dynamic_cast<const OSSIA::String*>(val);
-                if(!str_val)
+            add_child(m_sourcesNode, "add", OSSIA::Value::Type::STRING,
+                      [&] (const OSSIA::Value* val) { on_sourceAdded(val);} );
+
+            add_child(m_sourcesNode, "remove", OSSIA::Value::Type::STRING,
+                      [&] (const OSSIA::Value* val) { on_sourceRemoved(val);});
+        }
+
+        void on_sourceAdded(const OSSIA::Value* val)
+        {
+            auto str_val = dynamic_cast<const OSSIA::String*>(val);
+            if(!str_val)
+                return;
+
+            // Create the sound
+            auto sound_obj = new SoundObj{str_val->value};
+            sound_obj->setParent(&m_scene);
+            m_scene.sounds().insert(sound_obj);
+            auto& sound = sound_obj->sound;
+
+            // Create the callbacks and OSC device commands
+            auto src_node = *m_sourcesListNode->emplace(m_sourcesListNode->children().cend(), str_val->value);
+
+            // Position
+            auto src_pos_node = *src_node->emplace(src_node->children().cend(), "pos");
+            add_position(src_pos_node,
+                         make_parameter(
+                             [&] () { return sound.source().Position(); },
+                             [&] (const auto& elt) { sound.source().Position(elt); }
+            ));
+
+            // Enablement
+            add_child(src_node, "enabled", OSSIA::Value::Type::BOOL,
+                      [&,sound_obj] (const OSSIA::Value* val) {
+                auto enablement_val = dynamic_cast<const OSSIA::Bool*>(val);
+                if(!enablement_val)
                     return;
-
-                // Create the sound
-                auto sound_obj = new SoundObj{str_val->value};
-                s.sounds().insert(sound_obj);
-                auto& sound = sound_obj->sound;
-
-                // Create the callbacks and OSC device commands
-                auto src_node = *sources_list_node->emplace(sources_list_node->children().cend(), str_val->value);
-
-                // Position
-                auto src_pos_node = *src_node->emplace(src_node->children().cend(), "pos");
-                add_position(src_pos_node,
-                             make_parameter(
-                                 [&] () { return sound.source().Position(); },
-                [&] (const auto& elt) { sound.source().Position(elt); }
-                ));
-
-                // Enablement
-                add_child(src_node, "enabled", OSSIA::Value::Type::BOOL,
-                          [&,sound_obj] (const OSSIA::Value* val) {
-                    auto enablement_val = dynamic_cast<const OSSIA::Bool*>(val);
-                    if(!enablement_val)
-                        return;
-                    sound_obj->enablementChanged(enablement_val->value);
-                });
-
-                // Audio file
-                add_child(src_node, "file", OSSIA::Value::Type::STRING,
-                          [&,sound_obj] (const OSSIA::Value* val) {
-                    auto filename_val = dynamic_cast<const OSSIA::String*>(val);
-                    if(!filename_val)
-                        return;
-
-                    std::cerr << "Adding: " << filename_val->value.c_str() << std::endl;
-                    sound_obj->fileChanged(QString::fromStdString(filename_val->value));
-                });
+                sound_obj->enablementChanged(enablement_val->value);
             });
 
-            add_child(sources_node, "remove", OSSIA::Value::Type::STRING, [&] (const OSSIA::Value* val) {
-                auto str_val = dynamic_cast<const OSSIA::String*>(val);
-                if(!str_val)
+            // Audio file
+            add_child(src_node, "file", OSSIA::Value::Type::STRING,
+                      [&,sound_obj] (const OSSIA::Value* val) {
+                auto filename_val = dynamic_cast<const OSSIA::String*>(val);
+                if(!filename_val)
                     return;
 
-                // Remove from the sounds
-                s.sounds().erase(str_val->value);
-
-                // Remove from the OSC device
-                auto& children = sources_node->children();
-                auto it = boost::range::find_if(children,
-                                                [&] (auto&& elt) { return elt->getName() == str_val->value; });
-                if(it != children.end())
-                    children.erase(it);
+                sound_obj->fileChanged(QString::fromStdString(filename_val->value));
             });
         }
 
-    }
+        void on_sourceRemoved(const OSSIA::Value* val)
+        {
+            auto str_val = dynamic_cast<const OSSIA::String*>(val);
+            if(!str_val)
+                return;
+
+            // Remove from the sounds
+            m_scene.sounds().erase(str_val->value);
+
+            // Remove from the OSC device
+            auto& children = m_sourcesNode->children();
+            auto it = boost::range::find_if(children,
+                                            [&] (auto&& elt) { return elt->getName() == str_val->value; });
+            if(it != children.end())
+                children.erase(it);
+        }
+
+    public:
+        RemoteSceneManager(std::shared_ptr<OSSIA::Device> ptr):
+            m_dev{ptr}
+        {
+            setupGlobal();
+            setupListener();
+            setupSources();
+
+            on_sourceAdded(new OSSIA::String("ASound"));
+            auto node = getNode(m_sourcesListNode, "ASound");
+
+            auto enabled = getNode(node, "enabled");
+            enabled->getAddress()->sendValue(new OSSIA::Bool(true));
+
+            auto file = getNode(node, "file");
+            file->getAddress()->sendValue(new OSSIA::String("snd1.wav"));
+
+            /*
+            new std::thread([&] ()
+            {
+                while(true)
+                {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    auto pos = m_scene.listener().Position();
+                    pos[1] += 5;
+                    qDebug() << pos.y();
+
+                    m_scene.listener().Position(pos);
+                }
+            });
+            */
+        }
+
+        void start() { return m_scene.start(); }
+};
+
+
+
+#include <QApplication>
+int main(int argc, char** argv)
+{
+    QApplication app(argc, argv);
+
+    oalplus::Device device;
+    oalplus::ContextMadeCurrent context(
+                device,
+                oalplus::ContextAttribs().Add(oalplus::ContextAttrib::MonoSources, 1).Get());
+
+    RemoteSceneManager s{OSSIA::Device::create(OSSIA::Local {}, "MinuitDevice")};
+    auto iscore_dev = OSSIA::Device::create(OSSIA::Minuit{"127.0.0.1", 13579, 9998}, "i-score");
+    (void) iscore_dev;
+
     s.start();
 
     return app.exec();
