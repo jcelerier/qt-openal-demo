@@ -113,6 +113,11 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
     };
 
     auto addr = node->createAddress(OSSIA::Value::Type::TUPLE); // [ x y z ]
+    auto tupl = new OSSIA::Tuple;
+    tupl->value.push_back(new OSSIA::Float(param.get()[0]));
+    tupl->value.push_back(new OSSIA::Float(param.get()[1]));
+    tupl->value.push_back(new OSSIA::Float(param.get()[2]));
+    addr->sendValue(tupl);
 
     addr->setValueCallback([=] (const OSSIA::Value* val) {
         auto tpl = dynamic_cast<const OSSIA::Tuple*>(val);
@@ -133,14 +138,14 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
     add_float_child(node, "z", modify_i(2));
 }
 
-std::shared_ptr<OSSIA::Node> getNode(std::shared_ptr<OSSIA::Node> parent, 
-								     const std::string& name)
+std::shared_ptr<OSSIA::Node> getNode(std::shared_ptr<OSSIA::Node> parent,
+                                     const std::string& name)
 {
-	auto it = boost::range::find_if(
-				parent->children(),
-				[&] (const auto& node) { return node->getName() == name; });
-	Q_ASSERT(it != parent->children().end());
-	return *it;
+    auto it = boost::range::find_if(
+                parent->children(),
+                [&] (const auto& node) { return node->getName() == name; });
+    Q_ASSERT(it != parent->children().end());
+    return *it;
 }
 
 #include <thread>
@@ -181,6 +186,18 @@ class RemoteSceneManager
 
             auto listener_orient_node = *listener_node->emplace(listener_node->children().cend(), "orientation");
             auto listener_orient_addr = listener_orient_node->createAddress(OSSIA::Value::Type::TUPLE); // [ at_x at_y at_z up_x at_y at_z ]
+
+            auto tupl = new OSSIA::Tuple;
+
+            const auto& orient = m_scene.listener().Orientation();
+            tupl->value.push_back(new OSSIA::Float(orient.At()[0]));
+            tupl->value.push_back(new OSSIA::Float(orient.At()[1]));
+            tupl->value.push_back(new OSSIA::Float(orient.At()[2]));
+            tupl->value.push_back(new OSSIA::Float(orient.Up()[0]));
+            tupl->value.push_back(new OSSIA::Float(orient.Up()[1]));
+            tupl->value.push_back(new OSSIA::Float(orient.Up()[2]));
+            listener_orient_addr->sendValue(tupl);
+
             listener_orient_addr->setValueCallback([&] (const OSSIA::Value* val) {
                 auto tpl = dynamic_cast<const OSSIA::Tuple*>(val);
                 if(tpl->value.size() != 6)
