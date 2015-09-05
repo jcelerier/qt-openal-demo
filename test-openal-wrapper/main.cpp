@@ -79,7 +79,7 @@ auto add_child(std::shared_ptr<OSSIA::Node>& node,
                Fun&& callback)
 {
     auto new_node = *node->emplace(node->children().cend(), name);
-    new_node->createAddress(type)->setValueCallback(callback);
+    new_node->createAddress(type)->addCallback(callback);
 
     return new_node;
 }
@@ -92,7 +92,7 @@ auto add_float_child(std::shared_ptr<OSSIA::Node>& node,
     auto new_node = *node->emplace(node->children().cend(), name);
     auto addr = new_node->createAddress(OSSIA::Value::Type::FLOAT);
 
-    addr->setValueCallback(callback);
+    addr->addCallback(callback);
     addr->setDomain(OSSIA::Domain::create(new OSSIA::Float(-100.), new OSSIA::Float(100.)));
     return new_node;
 }
@@ -117,9 +117,9 @@ void add_position(std::shared_ptr<OSSIA::Node> node, Parameter_t&& param)
     tupl->value.push_back(new OSSIA::Float(param.get()[0]));
     tupl->value.push_back(new OSSIA::Float(param.get()[1]));
     tupl->value.push_back(new OSSIA::Float(param.get()[2]));
-    addr->sendValue(tupl);
+    addr->pushValue(tupl);
 
-    addr->setValueCallback([=] (const OSSIA::Value* val) {
+    addr->addCallback([=] (const OSSIA::Value* val) {
         auto tpl = dynamic_cast<const OSSIA::Tuple*>(val);
         if(tpl->value.size() != 3)
             return;
@@ -168,8 +168,8 @@ class RemoteSceneManager
             auto vol_addr = vol_node->createAddress(OSSIA::Value::Type::FLOAT);
             auto files_addr = files_node->createAddress(OSSIA::Value::Type::TUPLE);
 
-            vol_addr->setValueCallback([] (const OSSIA::Value* val) { });
-            files_addr->setValueCallback([] (const OSSIA::Value* val) { });
+            vol_addr->addCallback([] (const OSSIA::Value* val) { });
+            files_addr->addCallback([] (const OSSIA::Value* val) { });
         }
 
         //// Listener settings ////
@@ -196,9 +196,9 @@ class RemoteSceneManager
             tupl->value.push_back(new OSSIA::Float(orient.Up()[0]));
             tupl->value.push_back(new OSSIA::Float(orient.Up()[1]));
             tupl->value.push_back(new OSSIA::Float(orient.Up()[2]));
-            listener_orient_addr->sendValue(tupl);
+            listener_orient_addr->pushValue(tupl);
 
-            listener_orient_addr->setValueCallback([&] (const OSSIA::Value* val) {
+            listener_orient_addr->addCallback([&] (const OSSIA::Value* val) {
                 auto tpl = dynamic_cast<const OSSIA::Tuple*>(val);
                 if(tpl->value.size() != 6)
                     return;
@@ -314,10 +314,10 @@ class RemoteSceneManager
             auto node = getNode(m_sourcesListNode, "ASound");
 
             auto enabled = getNode(node, "enabled");
-            enabled->getAddress()->sendValue(new OSSIA::Bool(true));
+            enabled->getAddress()->pushValue(new OSSIA::Bool(true));
 
             auto file = getNode(node, "file");
-            file->getAddress()->sendValue(new OSSIA::String("snd1.wav"));
+            file->getAddress()->pushValue(new OSSIA::String("snd1.wav"));
 
             /*
             new std::thread([&] ()
@@ -339,7 +339,8 @@ class RemoteSceneManager
 };
 
 
-
+#include <Network/Protocol/Local.h>
+#include <Network/Protocol/Minuit.h>
 #include <QApplication>
 int main(int argc, char** argv)
 {
@@ -350,8 +351,8 @@ int main(int argc, char** argv)
                 device,
                 oalplus::ContextAttribs().Add(oalplus::ContextAttrib::MonoSources, 1).Get());
 
-    RemoteSceneManager s{OSSIA::Device::create(OSSIA::Local {}, "MinuitDevice")};
-    auto iscore_dev = OSSIA::Device::create(OSSIA::Minuit{"127.0.0.1", 13579, 9998}, "i-score");
+    RemoteSceneManager s{OSSIA::Device::create(OSSIA::Local::create(), "MinuitDevice")};
+    auto iscore_dev = OSSIA::Device::create(OSSIA::Minuit::create("127.0.0.1", 13579, 9998), "i-score");
     (void) iscore_dev;
 
     s.start();
